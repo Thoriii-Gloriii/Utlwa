@@ -491,14 +491,15 @@ public class MainActivity extends Activity {
     private View browseView() {
         LinearLayout w = ll(this, LinearLayout.VERTICAL); w.addView(section("Browse Categories"));
         String[] genres = {"Afrobeats", "Hip-Hop", "Pop", "Chill", "Rock", "Electronic", "R&B", "Gospel"};
-        for (int i = 0; i < genres.length; i += 2) {
+        // Three-column grid matches the approved Utlwa! discovery design.
+        for (int i = 0; i < genres.length; i += 3) {
             LinearLayout row = ll(this, LinearLayout.HORIZONTAL);
-            for (int j = 0; j < 2 && i + j < genres.length; j++) {
+            for (int j = 0; j < 3 && i + j < genres.length; j++) {
                 final String g = genres[i + j];
                 View card = genreCard(g, i + j);
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, Theme.dp(this, 116), 1);
-                p.leftMargin = j == 1 ? Theme.dp(this, 6) : 0;
-                p.rightMargin = j == 0 ? Theme.dp(this, 6) : 0;
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, Theme.dp(this, 112), 1);
+                p.leftMargin = j > 0 ? Theme.dp(this, 4) : 0;
+                p.rightMargin = j < 2 ? Theme.dp(this, 4) : 0;
                 p.bottomMargin = Theme.dp(this, 8);
                 card.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) {
                     // launch a real search for the genre
@@ -513,6 +514,7 @@ public class MainActivity extends Activity {
                 }});
                 row.addView(card, p);
             }
+            row.setWeightSum(3f);
             w.addView(row, new LinearLayout.LayoutParams(-1, -2));
         }
         return w;
@@ -690,7 +692,7 @@ public class MainActivity extends Activity {
         c.addView(edit);
 
         LinearLayout panel = ll(this, LinearLayout.VERTICAL); panel.setBackground(Theme.rounded(Theme.CARD, 16, this));
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, -2); pp.topMargin = Theme.dp(this, 28);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, -2); pp.topMargin = Theme.dp(this, 24);
         setting(panel, "Account", "Manage your account information", Views.IconView.ACCOUNT);
         setting(panel, "Playback", "Music playback preferences", Views.IconView.PLAY);
         setting(panel, "Notifications", "Notification preferences", Views.IconView.NOTIFICATIONS);
@@ -718,7 +720,7 @@ public class MainActivity extends Activity {
 
     private void setting(LinearLayout parent, String label, String sub, int icon) {
         LinearLayout r = ll(this, LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(Theme.dp(this, 16), Theme.dp(this, 14), Theme.dp(this, 14), Theme.dp(this, 14));
+        r.setPadding(Theme.dp(this, 16), Theme.dp(this, 12), Theme.dp(this, 14), Theme.dp(this, 12));
         Views.IconView i = new Views.IconView(this).type(icon).color(Theme.WHITE);
         i.setLayoutParams(new LinearLayout.LayoutParams(Theme.dp(this, 22), Theme.dp(this, 22))); r.addView(i);
         LinearLayout t = ll(this, LinearLayout.VERTICAL);
@@ -728,8 +730,49 @@ public class MainActivity extends Activity {
         b.setPadding(0, Theme.dp(this, 2), 0, 0); t.addView(a); t.addView(b); r.addView(t, tp);
         Views.IconView arrow = new Views.IconView(this).type(Views.IconView.CHEVRON_RIGHT).color(Theme.GOLD);
         arrow.setLayoutParams(new LinearLayout.LayoutParams(Theme.dp(this, 18), Theme.dp(this, 18))); r.addView(arrow);
-        r.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { toast(label); } });
+        r.setClickable(true);
+        r.setFocusable(true);
+        r.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openAccountSetting(label); }
+        });
         parent.addView(r);
+    }
+
+    /**
+     * Small, functional settings destinations. These are deliberately native
+     * dialogs until dedicated settings screens are added; no row is a dead tap.
+     */
+    private void openAccountSetting(String label) {
+        if ("Account".equals(label)) {
+            new AlertDialog.Builder(this).setTitle("Account")
+                    .setMessage("Manage your Utlwa! profile and account information from Edit Profile.")
+                    .setPositiveButton("Done", null).show();
+        } else if ("Playback".equals(label)) {
+            new AlertDialog.Builder(this).setTitle("Playback")
+                    .setItems(new String[]{"Shuffle: " + (shuffle ? "On" : "Off"),
+                            "Repeat: " + (repeat ? "On" : "Off")}, (dialog, which) -> {
+                        if (which == 0) shuffle = !shuffle;
+                        else repeat = !repeat;
+                        toast(which == 0 ? "Shuffle " + (shuffle ? "enabled" : "disabled")
+                                : "Repeat " + (repeat ? "enabled" : "disabled"));
+                    }).show();
+        } else if ("Notifications".equals(label)) {
+            new AlertDialog.Builder(this).setTitle("Notifications")
+                    .setMessage("Playback notifications are used to show the current track and playback controls.")
+                    .setPositiveButton("Done", null).show();
+        } else if ("Privacy & Security".equals(label)) {
+            new AlertDialog.Builder(this).setTitle("Privacy & Security")
+                    .setMessage("Review the permissions granted to Utlwa! in your Android system settings.")
+                    .setPositiveButton("Done", null).show();
+        } else if ("Appearance".equals(label)) {
+            new AlertDialog.Builder(this).setTitle("Appearance")
+                    .setItems(new String[]{"Dark Mode (current)"}, (dialog, which) -> toast("Utlwa! is using its black-and-gold dark theme."))
+                    .show();
+        } else {
+            new AlertDialog.Builder(this).setTitle("Help & Support")
+                    .setMessage("Utlwa! support resources will be available here.")
+                    .setPositiveButton("Done", null).show();
+        }
     }
 
     /* ---------------- player ---------------- */
