@@ -6,12 +6,15 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Bundle;
@@ -58,6 +61,8 @@ public class MainActivity extends Activity {
     private boolean chartsLoaded = false, madeLoaded = false, searching = false;
     private String diag = "";
     private int chartAttempts = 0;
+    /** Survives showScreen(1) rebuilds so the search box keeps its text. */
+    private String currentQuery = "";
 
     // Player
     private MediaPlayer mp;
@@ -67,6 +72,8 @@ public class MainActivity extends Activity {
     private Backend.Track current;
     private List<Backend.Track> queue = new ArrayList<>();
     private boolean playing = false, shuffle = false, repeat = false;
+    private int positionBeforeError = 0; // saved on error so seekTo restores position
+    private BroadcastReceiver noisyReceiver; // pauses on headphone unplug
     private Views.ArtworkView artBig, artMini;
     private Views.SeekBarView seek;
     private TextView songTitle, songArtist, miniTitle, miniArtist, timeNow, timeEnd;
@@ -80,10 +87,7 @@ public class MainActivity extends Activity {
                     int dur = durationMs();
                     seek.progress(dur > 0 ? pos / (float) dur : 0f);
                     timeNow.setText(fmt(pos / 1000));
-                    if (dur > 0 && pos >= dur - 600) {
-                        if (repeat) playTrack(current);
-                        else nextTrack();
-                    }
+                    // Completion is handled by OnCompletionListener; tick only updates UI.
                 } catch (Exception ignored) {}
             }
             handler.postDelayed(this, 400);
@@ -113,10 +117,33 @@ public class MainActivity extends Activity {
         mp.setOnErrorListener(new MediaPlayer.OnErrorListener() {
             @Override public boolean onError(MediaPlayer m, int what, int extra) {
                 playing = false; updatePlayIcons();
+                // Save position so we can seek back after switching to a fallback source.
+                try { positionBeforeError = m.getCurrentPosition(); } catch (Exception ignored) {}
                 playAudioAt(audioIdx + 1, what, extra);
                 return true;
             }
         });
+        // Advance or repeat when a track finishes naturally — no polling needed.
+        mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override public void onCompletion(MediaPlayer m) {
+                if (repeat) {
+                    try { m.seekTo(0); m.start(); } catch (Exception ignored) {}
+                } else {
+                    playing = false; nextTrack();
+                }
+            }
+        });
+        // Pause when headphones are unplugged.
+        noisyReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent i) {
+                if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(i.getAction()) && playing) {
+                    try { mp.pause(); playing = false; updatePlayIcons(); updateNotification(); }
+                    catch (Exception ignored) {}
+                }
+            }
+        };
+        registerReceiver(noisyReceiver,
+                new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Theme.BG);
@@ -143,7 +170,9 @@ public class MainActivity extends Activity {
             @Override public void result(List<Backend.Track> v, Exception e) {
                 if (v != null && !v.isEmpty()) {
                     charts = v; chartsLoaded = true;
-                    queue = new ArrayList<>(charts);
+                    // Only seed the queue from charts when nothing is playing; otherwise
+                    // mid-song "next" would jump to a chart track the user didn't choose.
+                    if (current == null) queue = new ArrayList<>(charts);
                     if (tab == 0 || tab == 1) showScreen(tab);
                     if (!madeLoaded) loadMade();
                 } else {
@@ -401,7 +430,7 @@ public class MainActivity extends Activity {
         TextView s = new TextView(this); s.setText(t.artist); s.setTextColor(Theme.MUTED);
         s.setTextSize(Theme.sp(this, 11)); s.setSingleLine(true); v.addView(s, new LinearLayout.LayoutParams(size, -2));
         v.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View x) {
-            if (!queue.contains(t)) queue.add(t); playTrack(t);
+            if (!queueContains(t)) queue.add(t); playTrack(t);
         }});
         return v;
     }
@@ -428,7 +457,7 @@ public class MainActivity extends Activity {
         r.addView(more);
         r.setPadding(0, Theme.dp(this, 8), 0, Theme.dp(this, 8));
         r.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) {
-            if (!queue.contains(t)) queue.add(t); playTrack(t);
+            if (!queueContains(t)) queue.add(t); playTrack(t);
         }});
         return withMargins(r, new LinearLayout.LayoutParams(-1, -2));
     }
@@ -448,6 +477,11 @@ public class MainActivity extends Activity {
         e.setBackground(Theme.stroked(Theme.CARD, Theme.BORDER, 1, 12, this));
         e.setPadding(Theme.dp(this, 16), Theme.dp(this, 13), Theme.dp(this, 13), Theme.dp(this, 13));
         c.addView(e, new LinearLayout.LayoutParams(-1, -2));
+        // Restore query so it isn't lost when showScreen(1) rebuilds the view.
+        if (!currentQuery.isEmpty()) {
+            e.setText(currentQuery);
+            e.setSelection(currentQuery.length());
+        }
 
         final LinearLayout box = ll(this, LinearLayout.VERTICAL);
         c.addView(box, new LinearLayout.LayoutParams(-1, -2));
@@ -464,13 +498,23 @@ public class MainActivity extends Activity {
                 debounce.postDelayed(new Runnable() {
                     @Override public void run() {
                         final String query = q.toString().trim();
-                        if (query.isEmpty()) { results.clear(); showScreen(1); return; }
+                        currentQuery = query;
+                        if (query.isEmpty()) {
+                            results.clear();
+                            box.removeAllViews(); box.addView(browseView()); box.addView(chartsView());
+                            return;
+                        }
                         searching = true; box.removeAllViews(); box.addView(empty("Searching YouTube…"));
                         Backend.search(query, new Backend.Callback<List<Backend.Track>>() {
                             @Override public void result(List<Backend.Track> v, Exception err) {
                                 searching = false;
-                                results = v == null ? new ArrayList<Backend.Track>() : v;
-                                if (tab == 1) showScreen(1);
+                                results = v != null && !v.isEmpty() ? v : new ArrayList<Backend.Track>();
+                                box.removeAllViews();
+                                if (err != null && results.isEmpty()) {
+                                    box.addView(empty("Search failed — check your connection."));
+                                } else {
+                                    renderResults(box);
+                                }
                             }
                         });
                     }
@@ -503,14 +547,18 @@ public class MainActivity extends Activity {
                 p.bottomMargin = Theme.dp(this, 8);
                 card.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) {
                     // launch a real search for the genre
+                    currentQuery = g;
                     searching = true;
                     Backend.search(g, new Backend.Callback<List<Backend.Track>>() {
                         @Override public void result(List<Backend.Track> val, Exception er) {
-                            searching = false; results = val == null ? new ArrayList<Backend.Track>() : val;
+                            searching = false;
+                            results = val != null && !val.isEmpty() ? val : new ArrayList<Backend.Track>();
                             if (tab == 1) showScreen(1);
+                            else if (er != null && results.isEmpty()) toast("Search failed for \"" + g + "\"");
                         }
                     });
-                    toast("Searching " + g + "…");
+                    // Switch to Search tab so the user sees the spinner/results.
+                    showScreen(1);
                 }});
                 row.addView(card, p);
             }
@@ -935,12 +983,28 @@ public class MainActivity extends Activity {
         if (miniPlayIcon != null) miniPlayIcon.type(t);
     }
 
+    /** Key-based membership test so Track objects with the same URL are found even
+     *  without equals()/hashCode() (Track has none). */
+    private boolean queueContains(Backend.Track t) {
+        for (Backend.Track q : queue) if (q.key().equals(t.key())) return true;
+        return false;
+    }
+
     private void nextTrack() {
         if (queue.isEmpty()) return;
-        int i = 0;
-        for (int k = 0; k < queue.size(); k++) if (queue.get(k).key().equals(current.key())) { i = k; break; }
-        if (shuffle) i = (int) (Math.random() * queue.size());
-        playTrack(queue.get((i + 1) % queue.size()));
+        int cur = 0;
+        for (int k = 0; k < queue.size(); k++) if (queue.get(k).key().equals(current != null ? current.key() : "")) { cur = k; break; }
+        int next;
+        if (shuffle) {
+            // Pick a random index that is not the current one (unless queue size == 1).
+            if (queue.size() == 1) { next = 0; }
+            else {
+                do { next = (int) (Math.random() * queue.size()); } while (next == cur);
+            }
+        } else {
+            next = (cur + 1) % queue.size();
+        }
+        playTrack(queue.get(next));
     }
 
     private void previousTrack() {
@@ -950,6 +1014,7 @@ public class MainActivity extends Activity {
         }
         int i = 0;
         for (int k = 0; k < queue.size(); k++) if (queue.get(k).key().equals(current.key())) { i = k; break; }
+        // In shuffle mode, previous goes to the linear predecessor, not another random track.
         playTrack(queue.get((i - 1 + queue.size()) % queue.size()));
     }
 
@@ -998,6 +1063,11 @@ public class MainActivity extends Activity {
                 @Override public void onPrepared(MediaPlayer m) {
                     trackMs = m.getDuration();
                     timeEnd.setText(fmt(trackMs / 1000));
+                    // If we fell back to this source after an error, resume from where the user was.
+                    if (positionBeforeError > 0) {
+                        try { m.seekTo(positionBeforeError); } catch (Exception ignored) {}
+                        positionBeforeError = 0;
+                    }
                     m.start(); playing = true; updatePlayIcons(); updateNotification();
                 }
             });
@@ -1081,6 +1151,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         handler.removeCallbacks(tick);
+        if (noisyReceiver != null) { try { unregisterReceiver(noisyReceiver); } catch (Exception ignored) {} }
         if (mp != null) { try { mp.stop(); } catch (Exception ignored) {} mp.release(); }
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(NOTIF_ID);

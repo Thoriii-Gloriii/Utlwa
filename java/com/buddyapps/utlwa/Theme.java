@@ -32,10 +32,9 @@ final class Theme {
                 c.getResources().getDisplayMetrics()));
     }
 
-    static int sp(Context c, float v) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v,
-                c.getResources().getDisplayMetrics()));
-    }
+    /** Return v unchanged. setTextSize() already interprets values in sp; converting
+     *  here caused text to be ~density× too big on every screen. */
+    static float sp(Context c, float v) { return v; }
 
     /** Rounded solid or stroked background. */
     static GradientDrawable rounded(int fill, float radiusDp, Context c) {

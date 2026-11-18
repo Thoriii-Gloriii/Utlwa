@@ -9,6 +9,7 @@ import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RadialGradient;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.view.MotionEvent;
@@ -93,10 +94,15 @@ final class Views {
             canvas.save();
             canvas.clipPath(clip);
             if (bitmap != null) {
-                // Centre-crop, never distort.
-                float scale = Math.max(w / (float) bitmap.getWidth(), h / (float) bitmap.getHeight());
-                float bw = bitmap.getWidth() * scale, bh = bitmap.getHeight() * scale;
-                canvas.drawBitmap(bitmap, (w - bw) / 2, (h - bh) / 2, p);
+                // Centre-crop using src/dst rects so the bitmap is actually scaled.
+                float sc = Math.max(w / (float) bitmap.getWidth(), h / (float) bitmap.getHeight());
+                float sw = w / sc, sh = h / sc;
+                Rect src = new Rect(
+                        (int) ((bitmap.getWidth() - sw) / 2),
+                        (int) ((bitmap.getHeight() - sh) / 2),
+                        (int) ((bitmap.getWidth() + sw) / 2),
+                        (int) ((bitmap.getHeight() + sh) / 2));
+                canvas.drawBitmap(bitmap, src, new RectF(0, 0, w, h), p);
                 canvas.restore();
                 return;
             }

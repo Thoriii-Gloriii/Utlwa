@@ -22,7 +22,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="Utlwa!"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:enableOnBackInvokedCallback="false">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

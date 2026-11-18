@@ -3,6 +3,9 @@
 set -euo pipefail
 P=$(cd "$(dirname "$0")" && pwd)
 SDK_JAR=${SDK_JAR:-$HOME/android-sdk/android-36/android.jar}
+if [ ! -f "$SDK_JAR" ] && [ -f "/root/android-sdk/android-36/android.jar" ]; then
+  SDK_JAR="/root/android-sdk/android-36/android.jar"
+fi
 LIBS=${LIBS:-$P/libs}
 if [ ! -d "$LIBS" ]; then LIBS=/root/.buddy/work/libs; fi
 KEYDIR=$HOME/.buddy/keys

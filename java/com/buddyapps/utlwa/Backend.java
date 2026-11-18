@@ -42,6 +42,17 @@ final class Backend {
             this.thumb = thumb; this.service = service; this.duration = duration;
         }
         String key() { return url; }
+
+        @Override public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Track track = (Track) o;
+            return url != null ? url.equals(track.url) : track.url == null;
+        }
+
+        @Override public int hashCode() {
+            return url != null ? url.hashCode() : 0;
+        }
     }
 
     private static boolean ready = false;
@@ -176,9 +187,30 @@ final class Backend {
     }
 
     private static Track convert(StreamInfoItem it) {
-        String thumb = it.getThumbnails().isEmpty() ? "" : it.getThumbnails().get(0).getUrl();
+        String thumb = "";
+        if (it.getThumbnails() != null && !it.getThumbnails().isEmpty()) {
+            org.schabi.newpipe.extractor.Image best = it.getThumbnails().get(0);
+            long bestScore = scoreImage(best);
+            for (org.schabi.newpipe.extractor.Image img : it.getThumbnails()) {
+                long score = scoreImage(img);
+                if (score >= bestScore) {
+                    best = img;
+                    bestScore = score;
+                }
+            }
+            thumb = best.getUrl();
+        }
         return new Track(it.getName(), it.getUploaderName(), it.getUrl(), thumb,
                 it.getServiceId(), it.getDuration());
+    }
+
+    private static long scoreImage(org.schabi.newpipe.extractor.Image img) {
+        if (img == null) return -1;
+        long w = img.getWidth(), h = img.getHeight();
+        if (w > 0 && h > 0) return w * h;
+        if (w > 0) return w;
+        if (h > 0) return h;
+        return 0;
     }
 
     static volatile String lastError = "";
