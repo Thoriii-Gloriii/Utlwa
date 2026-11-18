@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.buddyapps.utlwa">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/utlwa_logo"
+        android:roundIcon="@drawable/utlwa_logo"
+        android:label="Utlwa!"
+        android:theme="@style/UtlwaTheme"
+        android:supportsRtl="true">
+        <receiver android:name=".PlayerReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="com.buddyapps.utlwa.PLAYPAUSE" />
+                <action android:name="com.buddyapps.utlwa.NEXT" />
+                <action android:name="com.buddyapps.utlwa.PREV" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="Utlwa!"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
